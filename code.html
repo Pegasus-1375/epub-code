@@ -4,43 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EPUB Reader</title>
-    <!-- Load epub.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/epub.js/0.3.88/epub.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #viewer { width: 80%; margin: auto; border: 1px solid #ccc; padding: 10px; min-height: 400px; }
+    </style>
 </head>
 <body>
-
-    <h1>Upload an EPUB File</h1>
+    <h1>EPUB Reader</h1>
     <input type="file" id="fileInput" accept=".epub">
-    <div id="viewer" style="width: 100%; height: 500px; border: 1px solid black;"></div>
-    <button id="prevPage">Previous</button>
-    <button id="nextPage">Next</button>
-
+    <div id="viewer"></div>
+    
     <script>
-        let book, rendition;
-
         document.getElementById('fileInput').addEventListener('change', function(event) {
-            let file = event.target.files[0];
+            const file = event.target.files[0];
             if (file) {
-                let reader = new FileReader();
-                reader.onload = function(event) {
-                    let arrayBuffer = event.target.result;
-                    book = ePub(arrayBuffer);  // Ensure ePub is loaded properly
-                    rendition = book.renderTo("viewer", { width: "100%", height: "500px" });
-                    rendition.display();
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const arrayBuffer = e.target.result;
+                    extractEPUB(arrayBuffer);
                 };
                 reader.readAsArrayBuffer(file);
             }
         });
 
-        document.getElementById('nextPage').addEventListener('click', function() {
-            if (rendition) rendition.next();
-        });
+        async function extractEPUB(arrayBuffer) {
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            const container = await zip.file("META-INF/container.xml").async("text");
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(container, "text/xml");
+            const rootFile = xmlDoc.getElementsByTagName("rootfile")[0].getAttribute("full-path");
+            const contentXml = await zip.file(rootFile).async("text");
+            const contentDoc = parser.parseFromString(contentXml, "text/xml");
+            const spine = contentDoc.getElementsByTagName("spine")[0];
+            const itemRefs = spine.getElementsByTagName("itemref");
+            let content = "";
 
-        document.getElementById('prevPage').addEventListener('click', function() {
-            if (rendition) rendition.prev();
-        });
-
+            for (let itemRef of itemRefs) {
+                const idref = itemRef.getAttribute("idref");
+                const item = contentDoc.querySelector(`[id='${idref}']`);
+                if (item) {
+                    const filePath = item.getAttribute("href");
+                    const fileContent = await zip.file(filePath).async("text");
+                    content += fileContent + "<hr>";
+                }
+            }
+            document.getElementById("viewer").innerHTML = content;
+        }
     </script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </body>
 </html>
